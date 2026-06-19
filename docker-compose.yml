@@ -1,0 +1,8 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    # Localhost only — the host's nginx terminates TLS and proxies
+    # skalamax.si/noir/ → here. 8096 is the next free port after the other apps.
+    ports:
+      - "127.0.0.1:8096:80"

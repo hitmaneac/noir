@@ -1,0 +1,13 @@
+.git
+.gitignore
+.dockerignore
+Dockerfile
+docker-compose.yml
+deploy.sh
+references
+.history
+.claude
+node_modules
+*_tmp.png
+*_old*.png
+*.md
