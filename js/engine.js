@@ -16,6 +16,9 @@
   var FRAME_MS = 130; // default ms per walk-cycle frame (higher = slower walk)
   var walkMs = FRAME_MS; // active character's walk-frame duration (set per character)
   var MAX_LEVEL = 16; // highest scene that exists
+  // dev tools (top toolbar + collision/placement editor) gate. config.js sets
+  // `dev` (auto: on for localhost, off when deployed). Unset = on (back-compat).
+  var DEV = window.dev !== false;
 
   // 8-way walk: cardinals (f/b/r/l) from the 4-direction walk sheet, diagonals
   // (fr/fl/br/bl) from the sides sheet. Each is one row of its sheet.
@@ -3800,9 +3803,9 @@
 
   window.addEventListener("keydown", function (e) {
     if (e.keyCode === 69) {
-      toggleEditor();
+      if (DEV) toggleEditor();
       return;
-    } // E
+    } // E (dev only)
     // Enter (outside the editor): advance an open dialog, else talk to a nearby NPC
     if (e.keyCode === 13 && !editor.on) {
       if (e.repeat) return; // ignore key-repeat so held Enter doesn't skip lines
@@ -4147,8 +4150,11 @@
     requestAnimationFrame(frame);
   }
 
-  buildEditor();
-  buildCharBar(); // top toolbar: switch character + test grab/pickup/run cycles
+  // dev tools (toolbar + collision/placement editor) only in dev mode
+  if (DEV) {
+    buildEditor();
+    buildCharBar(); // top toolbar: switch character + test grab/pickup/run cycles
+  }
   // resume the last session: persisted character + scene (env), else config default
   if (CHAR_META[env.character]) charOverride = env.character;
   var bootLevel =
