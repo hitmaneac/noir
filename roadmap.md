@@ -163,7 +163,7 @@ The game is a **pure static web app**, so every target wraps the same `noir/` fo
 
 | Target | Tech | Notes |
 |---|---|---|
-| **Web** | static site | Deploy to **skalamax.si** (existing docker/nginx + `deploy.sh`). Primary target. |
+| **Web** | static site | ✅ **LIVE at https://skalamax.si/noir/** — `nginx:alpine` container on `127.0.0.1:8096`; host nginx routes `/noir/` (apex `skalamax.si` block). Redeploy: `./deploy.sh root@skalamax.si`. Source on GitHub (`hitmaneac/noir`). |
 | **Desktop** | **Tauri** | system webview, ~3–10 MB binaries. |
 | **Mobile** | **Capacitor** | reuse the **S-Labs Suite** shell; static site in `www/`. |
 
