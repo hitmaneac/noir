@@ -168,7 +168,7 @@ The game is a **pure static web app**, so every target wraps the same `noir/` fo
 | **Mobile** | **Capacitor** | reuse the **S-Labs Suite** shell; static site in `www/`. |
 
 **Engine changes needed before shipping (one focused pass):**
-1. **Dev-mode flag** (`config.js`) — hide the toolbar + editor in production.
+1. ~~Dev-mode flag~~ — ✅ `config.js` `dev` auto-detects localhost (on) vs deployed (off); engine hides the toolbar + editor + E-key in production.
 2. **Input abstraction** — pointer/touch parity (tap already = click; editor is dev-only; talk works by tapping NPCs).
 3. **Fit-to-screen scaling** — CSS transform on `.game` to letterbox the fixed 1300px world to any viewport.
 4. **Persistence** — inventory + story flags → `localStorage` (resume on relaunch).
