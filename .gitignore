@@ -1,0 +1,18 @@
+# OS / editor junk
+.DS_Store
+*.swp
+
+# local Claude config + VS Code local history
+.claude/
+.history/
+
+# raw source / reference material (kept local — heavy: ChatGPT art, MP4s, ZIPs, PSD)
+references/
+
+# working / temp / backup art
+*_tmp.png
+*_old.png
+*_old*.png
+
+# deps (in case any tooling is added later)
+node_modules/
