@@ -1173,6 +1173,228 @@
     if (dialogEl) dialogEl.style.display = "none";
   }
 
+  // ---- cutscenes -----------------------------------------------------------
+  // A cutscene is an ordered list of typed steps run by an async sequencer. It
+  // mixes full-screen "stills" (images/animations + captions) with in-scene
+  // "staged" beats (hero/NPCs glide to marks and speak in the live room).
+  // Register: Nooir.cutscene(id, steps). Play: Nooir.playCutscene(id), or a
+  // scene's settings `onEnter:"id"` (plays once, gated by the `cs_<id>` flag).
+  // Steps (each { do:"…", … }):
+  //   still {img, frames?, speed?, fadeIn?, ms?}  full-frame image/anim (ms omitted = wait for tap)
+  //   clear {ms?}                                 fade the still away, back to the room
+  //   say {who, text}                             caption line; waits for a tap
+  //   anim {frames, speed?, hold?}                full-frame frame animation for `hold` ms
+  //   move {who, x, y, facing?, wait?}            staged glide to a mark (wait:false = don't await)
+  //   face {who, facing}                          turn in place
+  //   fade {to, ms?}                              fade the black overlay (to:1 black, 0 clear)
+  //   shake {ms?} · wait {ms} · flash {text, ms?} · call {fn} · goto {scene, with?}
+  var cutscenes = {};
+  var cutsceneOn = false, csSkip = false, csGoto = false, csTapResolve = null;
+  var csStill = null, csCap = null, csSkipBtn = null, csAnimTimer = null;
+  function csDelay(ms) {
+    return new Promise(function (r) { setTimeout(r, ms || 0); });
+  }
+  function csWaitTap() {
+    return new Promise(function (r) { csTapResolve = r; });
+  }
+  function csTap() {
+    if (csTapResolve) { var r = csTapResolve; csTapResolve = null; r(); }
+  }
+  function csActor(who) {
+    if (who === "hero" || who == null) return player;
+    for (var i = 0; i < npcs.length; i++)
+      if (npcs[i].label === who || npcs[i].name === who) return npcs[i];
+    return player;
+  }
+  function ensureCutsceneUI() {
+    if (csStill) return;
+    csStill = document.createElement("div");
+    csStill.className = "cutscene-still";
+    csStill.style.cssText =
+      "position:fixed;inset:0;z-index:100050;background:#000 center/contain no-repeat;" +
+      "opacity:0;transition:opacity .5s;display:none;pointer-events:none;";
+    document.body.appendChild(csStill);
+    csCap = document.createElement("div");
+    csCap.className = "cutscene-caption";
+    csCap.style.cssText =
+      "position:fixed;left:50%;bottom:46px;transform:translateX(-50%);z-index:100072;" +
+      "width:min(720px,88%);text-align:center;font:16px/1.6 Georgia,serif;color:#eee;" +
+      "background:rgba(6,6,9,.7);border-radius:8px;padding:12px 20px;display:none;" +
+      "text-shadow:0 1px 3px #000;pointer-events:none;";
+    document.body.appendChild(csCap);
+    csSkipBtn = document.createElement("div");
+    csSkipBtn.textContent = "skip ›";
+    csSkipBtn.style.cssText =
+      "position:fixed;right:18px;bottom:18px;z-index:100073;font:12px system-ui;color:#9aa;" +
+      "background:rgba(0,0,0,.5);border:1px solid #555;border-radius:4px;padding:5px 10px;" +
+      "cursor:pointer;display:none;";
+    csSkipBtn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      csSkip = true;
+      csTap();
+    });
+    document.body.appendChild(csSkipBtn);
+  }
+  function csShowStill(url, fadeMs) {
+    ensureCutsceneUI();
+    csStill.style.transition = "opacity " + (fadeMs || 0) / 1000 + "s";
+    csStill.style.backgroundImage = url ? "url('" + url + "')" : "none";
+    csStill.style.display = "block";
+    requestAnimationFrame(function () { csStill.style.opacity = 1; });
+  }
+  function csStopAnim() {
+    if (csAnimTimer) { clearInterval(csAnimTimer); csAnimTimer = null; }
+  }
+  function csStartAnim(frames, speed) {
+    csStopAnim();
+    if (!frames || !frames.length) return;
+    var i = 0;
+    csStill.style.backgroundImage = "url('" + frames[0] + "')";
+    csAnimTimer = setInterval(function () {
+      i = (i + 1) % frames.length;
+      csStill.style.backgroundImage = "url('" + frames[i] + "')";
+    }, Math.max(30, (speed || 0.12) * 1000));
+  }
+  function csSay(who, text) {
+    ensureCutsceneUI();
+    csCap.innerHTML = "";
+    if (who) {
+      var nm = document.createElement("div");
+      nm.style.cssText =
+        "font:11px system-ui;letter-spacing:.12em;text-transform:uppercase;color:#9fb4c8;margin-bottom:5px;";
+      nm.textContent = who === "hero" ? heroLabel() : who;
+      csCap.appendChild(nm);
+    }
+    var tx = document.createElement("div");
+    tx.textContent = text;
+    csCap.appendChild(tx);
+    csCap.style.display = "block";
+    return csWaitTap();
+  }
+  function csMoveActor(a, x, y, facing) {
+    a.moveTo = {
+      x: x == null ? a.x : x,
+      y: y == null ? a.y : y,
+      facing: facing || null,
+    };
+    return new Promise(function (res) {
+      (function poll() {
+        if (csSkip || !a.moveTo) return res();
+        requestAnimationFrame(poll);
+      })();
+    });
+  }
+  function runStep(s) {
+    if (!s || typeof s !== "object") return Promise.resolve();
+    switch (s.do) {
+      case "wait":
+        return csDelay(s.ms);
+      case "fade":
+        ensureFade();
+        fade.style.opacity = s.to != null ? s.to : 1;
+        return csDelay(s.ms != null ? s.ms : 450);
+      case "still":
+        if (csCap) csCap.style.display = "none";
+        csStopAnim();
+        csShowStill(s.img, s.fadeIn != null ? s.fadeIn : 400);
+        if (s.frames) csStartAnim(s.frames, s.speed);
+        return s.ms != null ? csDelay(s.ms) : csWaitTap();
+      case "anim":
+        if (csCap) csCap.style.display = "none";
+        csShowStill(null, 0);
+        csStartAnim(s.frames, s.speed);
+        return csDelay(s.hold != null ? s.hold : 1500).then(csStopAnim);
+      case "clear":
+        csStopAnim();
+        if (csCap) csCap.style.display = "none";
+        if (!csStill) return Promise.resolve();
+        csStill.style.transition = "opacity " + (s.ms != null ? s.ms : 400) / 1000 + "s";
+        csStill.style.opacity = 0;
+        return csDelay(s.ms != null ? s.ms : 400).then(function () {
+          if (csStill) csStill.style.display = "none";
+        });
+      case "say":
+        return csSay(s.who, s.text);
+      case "move": {
+        var a = csActor(s.who),
+          p = csMoveActor(a, s.x, s.y, s.facing);
+        return s.wait === false ? Promise.resolve() : p;
+      }
+      case "face": {
+        var a2 = csActor(s.who);
+        if (s.facing) a2.facing = s.facing;
+        if (a2 !== player) renderNpc(a2);
+        return Promise.resolve();
+      }
+      case "shake":
+        shake(s.ms || 450);
+        return s.wait === false ? Promise.resolve() : csDelay(s.ms || 450);
+      case "flash":
+        flashMsg(s.text, s.ms || 1800);
+        return s.wait === false ? Promise.resolve() : csDelay(s.ms || 1800);
+      case "call":
+        if (typeof s.fn === "function") try { s.fn(); } catch (e) {}
+        return Promise.resolve();
+      case "goto":
+        csGoto = true;
+        if (csStill) csStill.style.display = "none";
+        if (csCap) csCap.style.display = "none";
+        csStopAnim();
+        transitionTo(s.scene, s["with"] || null);
+        return Promise.resolve();
+      default:
+        return Promise.resolve();
+    }
+  }
+  function endCutscene() {
+    cutsceneOn = false;
+    csSkip = false;
+    csTapResolve = null;
+    csStopAnim();
+    if (csCap) csCap.style.display = "none";
+    if (csSkipBtn) csSkipBtn.style.display = "none";
+    if (csStill && !csGoto) {
+      csStill.style.transition = "opacity .5s";
+      csStill.style.opacity = 0;
+      setTimeout(function () { if (csStill) csStill.style.display = "none"; }, 500);
+    }
+    if (!csGoto && fade) fade.style.opacity = 0; // un-black the room if we faded
+    if (invBar && inventory.length) invBar.style.display = "flex";
+  }
+  function playCutscene(id, done) {
+    var steps = typeof id === "string" ? cutscenes[id] : id;
+    if (!Array.isArray(steps) || cutsceneOn) return false;
+    cutsceneOn = true;
+    csSkip = false;
+    csGoto = false;
+    ensureCutsceneUI();
+    if (dialogOpen) closeDialog();
+    if (invBar) invBar.style.display = "none";
+    csSkipBtn.style.display = "block";
+    var i = 0;
+    function next() {
+      if (csSkip) {
+        // a skipped cutscene still honors its destination, if any
+        var g = null;
+        for (var k = steps.length - 1; k >= 0; k--)
+          if (steps[k] && steps[k].do === "goto") { g = steps[k]; break; }
+        csGoto = !!g;
+        endCutscene();
+        if (g) transitionTo(g.scene, g["with"] || null);
+        if (typeof done === "function") done();
+        return;
+      }
+      if (i >= steps.length) {
+        endCutscene();
+        if (typeof done === "function") done();
+        return;
+      }
+      runStep(steps[i++]).then(next, next);
+    }
+    next();
+    return true;
+  }
+
   // per-line staging: a dialog turn can reposition the hero and/or the NPC,
   // who then glide (walk-animated) to the target while the line is shown.
   // spec is { x, y, facing } — any field optional; facing-only turns in place.
@@ -1307,8 +1529,9 @@
       (tc.contains("npc") || tc.contains("object") || tc.contains("actionzone"))
     )
       return;
-    if (dialogOpen) return; // don't walk during a conversation (a document-level
-    // tap handler advances it — see below — so a tap anywhere, incl. the
+    if (dialogOpen || cutsceneOn) return; // don't walk during a conversation /
+    // cutscene (a document-level tap handler advances those — see below — so a
+    // tap anywhere, incl. the
     // letterbox bars, works on touch)
     if (transitioning || editor.on) return; // editor consumes clicks for painting
     var rect = elBg.getBoundingClientRect(); // .background spans the world (scaled)
@@ -1518,8 +1741,8 @@
   }
 
   function update(dt) {
-    if (transitioning || dialogOpen) {
-      animate(dt, false); // hero stands still during transitions / conversations
+    if (transitioning || dialogOpen || cutsceneOn) {
+      animate(dt, false); // hero stands still during transitions / conversations / cutscenes
       return;
     }
     if (fx) {
@@ -2611,6 +2834,7 @@
     window.startingY = undefined; // optional hero spawn depth (else 60% down the floor)
     window.startingFacing = undefined; // optional hero spawn facing (else "r")
     window.exitGate = undefined; // per-scene door veto (set in a scene's actions.js)
+    window.onEnter = undefined; // optional cutscene id to play once on entering this scene
     return (
       loadScript("rooms/scene" + n + "/js/settings.js")
         .then(function () {
@@ -2633,6 +2857,15 @@
         .then(function () {
           resetActions();
           return loadScriptOptional("rooms/scene" + n + "/js/actions.js");
+        })
+        // a scene can auto-play a cutscene on first entry (registered in its
+        // actions.js or a global script); gated by the `cs_<id>` story flag
+        .then(function () {
+          var cs = window.onEnter;
+          if (cs && cutscenes[cs] && !getFlag("cs_" + cs)) {
+            setFlag("cs_" + cs, true);
+            playCutscene(cs);
+          }
         })
     );
   }
@@ -4099,10 +4332,16 @@
   // conversation — works on touch devices and over the letterbox bars (the
   // choice buttons stopPropagation, so picking an option isn't swallowed).
   document.addEventListener("click", function () {
+    if (cutsceneOn) return csTap(); // a tap advances a waiting cutscene step
     if (dialogOpen && !editor.on) advanceDialog();
   });
 
   window.addEventListener("keydown", function (e) {
+    if (cutsceneOn) {
+      if (e.keyCode === 27) csSkip = true; // Esc skips the rest of the cutscene
+      if (e.keyCode === 27 || e.keyCode === 13 || e.keyCode === 32) csTap(); // Esc/Enter/Space advance
+      return;
+    }
     if (e.keyCode === 69) {
       if (DEV) toggleEditor();
       return;
@@ -4651,5 +4890,17 @@
     // optional extra handler for action zones, on top of the built-in id actions:
     // fn({id, index, cx, cy, x, y, level})
     onAction: null,
+    // ---- cutscenes ----
+    cutscene: function (id, steps) {
+      // register a cutscene script (see the step vocabulary near closeDialog)
+      if (typeof id === "string" && Array.isArray(steps)) cutscenes[id] = steps;
+    },
+    playCutscene: function (id, done) {
+      // play a registered cutscene (id) or an inline steps array; done() after
+      return playCutscene(id, done);
+    },
+    isCutscenePlaying: function () {
+      return cutsceneOn;
+    },
   };
 })();

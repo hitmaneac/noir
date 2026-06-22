@@ -10,6 +10,7 @@ var backgroundSize = 1300, // width of the game world, px
   character = "hatguy",
   heroName = "Elias",
   actionZones = [], // TODO: Finch's things to examine
+  onEnter = "apartment_intro", // plays once on first entry (registered in actions.js)
   backTo = 1, //  ← back out to Vesper Street (the blue door)
   startingY = 560, // a step in front of the door, clear of the back zone
   startingFacing = "f",
