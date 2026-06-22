@@ -5,9 +5,10 @@
 Nooir.addObject({
   id: "finchbody",
   image: "objects/body.png",
-  size: { w: 250, h: 126 },
+  size: { w: 350, h: 126 },
   x: 640,
-  y: 706,
+  y: 716,
+  z: 700, // dock objBlock is 698, so this draws in front but is still clickable
   takeable: false, // a body isn't pocket-sized
   anim: "pickup", // Elias crouches over it
   onInteract: function () {
@@ -16,7 +17,10 @@ Nooir.addObject({
       return;
     }
     Nooir.shake(500);
-    Nooir.flashMsg("Arthur Finch. Eight days of river on him. Something stiff sewn into the coat...", 2800);
+    Nooir.flashMsg(
+      "Arthur Finch. Eight days of river on him. Something stiff sewn into the coat...",
+      2800,
+    );
     Nooir.addObject({
       id: "greenbook",
       image: "objects/greenbook.png",

@@ -5,8 +5,9 @@ Nooir.addObject({
   id: "photo",
   image: "objects/photo.png",
   size: { w: 44, h: 54 },
-  x: 540,
-  y: 722,
+  x: 680,
+  y: 500,
+  z: 702, // drawn in front of the desk objBlock (bottomY 698), not behind it
   takeable: true,
   anim: "pickup",
   onInteract: function () {
@@ -16,10 +17,11 @@ Nooir.addObject({
 
 Nooir.addObject({
   id: "ticket",
-  image: "objects/ticket.png",
-  size: { w: 56, h: 34 },
-  x: 700,
-  y: 726,
+  image: "objects/pawnticket_small.png",
+  size: { w: 90, h: 56 },
+  x: 620,
+  y: 520, // up on the desk surface…
+  z: 702, // …but drawn in front of the desk objBlock (bottomY 698), not behind it
   takeable: true,
   anim: "pickup",
   onInteract: function () {

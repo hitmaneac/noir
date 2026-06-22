@@ -11,8 +11,14 @@ var backgroundSize = 1300, // width of the game world, px
   heroName = "Elias",
   // story zones — examine Finch's door, work the pawn lockers (see actions.js)
   actionZones = [{"id":"finchdoor","cx":300,"cy":620},{"id":"lockers","cx":720,"cy":655}],
-  exitTo = 2, // → the docks (follow Finch's trail to Pier 7)
-  backTo = 4, // ← Elias's office
+  exitTo = 2, // → the docks (follow Finch's trail to Pier 7) — fallback for unmapped green
+  backTo = 4, // ← Elias's office — fallback for unmapped blue
+  // multi-door map: each painted door → its own scene, matched by centroid (≤90px)
+  exits = [
+    { to: 17, cx: 327, cy: 551 }, // first door (under the lamp) → Finch's apartment
+    { to: 2, cx: 1281, cy: 701 }, // street, far right → the docks (Pier 7)
+    { to: 4, cx: 18, cy: 704 }, //  ← back to Elias's office
+  ],
   startingY = 562,
   startingFacing = "f",
   scene = 1;

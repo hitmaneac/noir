@@ -15,7 +15,7 @@
   var BASE_SPEED = 260; // walk speed (px/s) at nearest/largest size
   var FRAME_MS = 130; // default ms per walk-cycle frame (higher = slower walk)
   var walkMs = FRAME_MS; // active character's walk-frame duration (set per character)
-  var MAX_LEVEL = 16; // highest scene that exists
+  var MAX_LEVEL = 17; // highest scene that exists (17 = Finch's apartment, off scene1)
   // dev tools (top toolbar + collision/placement editor) gate. config.js sets
   // `dev` (auto: on for localhost, off when deployed). Unset = on (back-compat).
   var DEV = window.dev !== false;
@@ -1700,6 +1700,10 @@
       label: opts.label, // shown when the inventory item is tapped
       look: opts.look, // optional longer description on tap (falls back to label/id)
       anim: opts.anim === undefined ? "grab" : opts.anim, // null = no animation
+      // explicit depth: z-index override (else the feet `y`, like NPCs). Use it
+      // to sit a prop ON scenery — e.g. a ticket on a desk needs z above the
+      // desk objBlock's `bottomY`, since its own small y would sort it behind.
+      z: typeof opts.z === "number" ? opts.z : null,
       onInteract:
         typeof opts.onInteract === "function" ? opts.onInteract : null,
       el: null,
@@ -1723,7 +1727,7 @@
       (o.y - h) +
       "px,0);" +
       "z-index:" +
-      Math.round(o.y) +
+      Math.round(o.z != null ? o.z : o.y) +
       ";";
     el.addEventListener("click", function (e) {
       e.stopPropagation(); // don't also trigger floor click-to-walk
@@ -4618,7 +4622,7 @@
     }, // run/kneel/reach… (null = walk)
     playCharAnim: playCharAnim, // one-shots take an onEnd callback
     flashMsg: flashMsg, // flashMsg(text, ms) — brief on-screen message
-    addObject: addObject, // place a prop/pickup: {id,image,size,x,y,takeable,onInteract}
+    addObject: addObject, // place a prop/pickup: {id,image,size,x,y,z?,takeable,onInteract}
     inventory: inventory, // array of {id,image} the character is carrying
     hasItem: hasItem, // hasItem(id) -> already picked up?
     story: story, // persisted story flags (branching state)
