@@ -108,4 +108,5 @@ var objBlocks = [],
   npcPlacements = [{"npc":"Vera","x":1172,"y":757}],
   startingY = 515,
   startingFacing = "f",
+  exits = [{"to":16,"cx":203,"cy":494},{"to":16,"cx":1299,"cy":570},{"to":15,"cx":1279,"cy":686}],
   scene = 8;

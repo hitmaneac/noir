@@ -446,6 +446,47 @@
     }
     return null;
   }
+  // march in a straight line from the player toward (tx,ty); return the last
+  // walkable point before the floor ends. Lets a click OUTSIDE the walkable area
+  // still send the hero that way — he just stops where the floor stops.
+  function walkableTowards(tx, ty) {
+    var dx = tx - player.x,
+      dy = ty - player.y,
+      dist = Math.hypot(dx, dy);
+    if (dist < 1) return isWalkable(player.x, player.y) ? { x: player.x | 0, y: player.y | 0 } : null;
+    var ux = dx / dist,
+      uy = dy / dist,
+      last = null;
+    for (var d = 0; d <= dist; d += 6) {
+      var x = player.x + ux * d,
+        y = player.y + uy * d;
+      if (isWalkable(x, y)) last = { x: x | 0, y: y | 0 };
+      else break; // hit a wall — stop at the last floor point in this direction
+    }
+    return last;
+  }
+  // where the hero stands to use an object: an explicit `approach`, else the
+  // walkable floor in FRONT of it (scan down past any obstruction — e.g. a desk —
+  // so a prop on furniture is reached from the near side, not by walking the feet
+  // onto it). Falls back to the nearest walkable if the object sits on open floor.
+  function objectApproach(o) {
+    if (o.approach && typeof o.approach.x === "number") {
+      var a = o.approach;
+      return isWalkable(a.x, a.y)
+        ? { x: a.x | 0, y: a.y | 0 }
+        : nearestWalkable(a.x, a.y, 200) || { x: a.x | 0, y: a.y | 0 };
+    }
+    var x = o.x | 0,
+      sawBlock = false;
+    for (var y = o.y | 0; y < col.h; y++) {
+      if (!isWalkable(x, y)) {
+        sawBlock = true;
+        continue;
+      }
+      if (sawBlock) return { x: x, y: Math.min(col.h - 1, y + 8) }; // floor just past it
+    }
+    return nearestWalkable(o.x, o.y, 400) || { x: o.x | 0, y: o.y | 0 };
+  }
 
   // ---- perspective ---------------------------------------------------------
   function heightAt(y) {
@@ -966,7 +1007,9 @@
       consider(Math.hypot(zn.cx - player.x, zn.cy - player.y), zn, "zone");
     var zf = zoneAt(player.x, player.y); // standing on a painted zone always counts
     if (zf) consider(0, zf, "zone");
-    if (!best || bestD > RANGE) return false;
+    // objects reach farther (a prop can sit on a desk, above the floor you stand on)
+    var limit = kind === "obj" ? OBJ_REACH : RANGE;
+    if (!best || bestD > limit) return false;
     if (kind === "npc") startDialog(best);
     else if (kind === "obj") interactWith(best);
     else runZone(best);
@@ -1552,7 +1595,11 @@
     }
     // clicking on/near an action zone (painted region or settings point) runs it
     var zone = zoneNear(wx, wy, 70) || zoneAt(wx, wy);
-    var dest = nearestWalkable(wx, wy, 300);
+    // walk to the click; if it's OUTSIDE the floor, head that way and stop at the
+    // edge (march toward it), rather than ignoring the click or snapping sideways.
+    var dest = isWalkable(wx, wy)
+      ? { x: wx | 0, y: wy | 0 }
+      : walkableTowards(wx, wy) || nearestWalkable(wx, wy, 300);
     if (!dest) return;
     var path = findPath(player, dest);
     if (path && path.length) {
@@ -1928,6 +1975,7 @@
       // to sit a prop ON scenery — e.g. a ticket on a desk needs z above the
       // desk objBlock's `bottomY`, since its own small y would sort it behind.
       z: typeof opts.z === "number" ? opts.z : null,
+      approach: opts.approach || null, // optional {x,y} floor spot to grab it from
       onInteract:
         typeof opts.onInteract === "function" ? opts.onInteract : null,
       el: null,
@@ -1963,9 +2011,16 @@
     return o;
   }
 
+  var OBJ_REACH = 240; // vicinity for grabbing a prop (covers in-front-of / behind a desk)
   function interactWith(o) {
     if (transitioning || editor.on) return;
-    var dest = nearestWalkable(o.x, o.y, 400) || { x: o.x, y: o.y };
+    // already in the vicinity (in front of OR behind the desk)? grab where you
+    // stand — no need to walk the feet onto the prop.
+    if (Math.hypot(o.x - player.x, o.y - player.y) <= OBJ_REACH) {
+      arriveAt(o);
+      return;
+    }
+    var dest = objectApproach(o); // else walk to the floor in front of it
     var path = findPath(player, dest);
     if (path && path.length) {
       player.path = path;
@@ -1973,7 +2028,7 @@
       player.runPath = false;
       pendingInteract = o; // arriveAt() fires when followPath finishes
     } else {
-      arriveAt(o); // already adjacent (or unreachable) — just do it
+      arriveAt(o); // unreachable floor — just grab it
     }
   }
 
@@ -4873,7 +4928,7 @@
     }, // run/kneel/reach… (null = walk)
     playCharAnim: playCharAnim, // one-shots take an onEnd callback
     flashMsg: flashMsg, // flashMsg(text, ms) — brief on-screen message
-    addObject: addObject, // place a prop/pickup: {id,image,size,x,y,z?,takeable,onInteract}
+    addObject: addObject, // place a prop/pickup: {id,image,size,x,y,z?,approach?,takeable,onInteract}
     inventory: inventory, // array of {id,image} the character is carrying
     hasItem: hasItem, // hasItem(id) -> already picked up?
     story: story, // persisted story flags (branching state)
