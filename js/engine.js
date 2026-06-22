@@ -314,7 +314,8 @@
   // `exitTo` (default scene+1) and blue to `backTo` (default scene-1).
   var exitZones = [],
     exitLabels = null,
-    exitDefs = []; // exitDefs: [{to, cx, cy, id?}] from settings
+    exitDefs = [], // exitDefs: [{to, cx, cy, id?}] from settings
+    spawnDoorLbl = 0; // door label the hero spawned on — suppressed until he steps off it
   function isExitTerrain(t) {
     return t === T_EXIT || t === T_BACK;
   }
@@ -2302,6 +2303,10 @@
       py = player.y | 0;
     if (px < 0 || py < 0 || px >= col.w || py >= col.h) return;
     var lbl = exitLabels[py * col.w + px];
+    if (spawnDoorLbl) {
+      if (lbl === spawnDoorLbl) return; // still on the door we spawned on — wait
+      spawnDoorLbl = 0; // stepped off it — re-arm all doors
+    }
     if (!lbl) return;
     var z = exitZones[lbl - 1];
     var dest = z ? z.to : 0;
@@ -2816,6 +2821,13 @@
     player.frame = 1;
     player.facing =
       typeof window.startingFacing === "string" ? window.startingFacing : "r";
+    // if the spawn sits on an exit door (e.g. you arrive where a door is painted),
+    // suppress THAT door until the feet leave it — else you'd ricochet straight
+    // back out of the scene (checkExit fires on the spawn frame).
+    spawnDoorLbl =
+      exitLabels && player.y >= 0 && player.x >= 0
+        ? exitLabels[(player.y | 0) * col.w + (player.x | 0)] || 0
+        : 0;
   }
 
   function loadLevel(n, overrides) {
