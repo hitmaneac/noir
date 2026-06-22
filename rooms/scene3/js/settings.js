@@ -59,7 +59,7 @@ var backgroundSize = 1300, // width of the game world, px
       ],
     },
   ],
-  actionZones = [],
+  actionZones = [{ id: "letter", cx: 540, cy: 552 }], // Quist's bribe on the desk blotter (examine)
   exitTo = 12, // → outside the precinct (Act II continues)
   backTo = 5, //  ← Mickey's bar
   npcPaths = [{"npc":"Quist","path":[{"x":803,"y":580},{"x":630,"y":577},{"x":803,"y":579}],"speed":0.3}],
