@@ -77,11 +77,32 @@
   elChar.style.top = "0";
   elChar.style.left = "0";
   elChar.style.willChange = "transform";
-  window.addEventListener("resize", function () {
-    centerGame();
-  });
-  function centerGame() {
-    if (bgWidth) elGame.style.marginLeft = -(bgWidth / 2) + "px";
+  window.addEventListener("resize", fitToScreen);
+  // Scale the fixed 1300×800 world to fit any viewport, centred (letterboxed on
+  // the black body). Uniform scale preserves aspect; everything inside .game
+  // (layers, character, objBlocks, rain) scales with it. Floor clicks divide by
+  // the scale (via the rect) so they still map to world pixels.
+  function fitToScreen() {
+    var W = bgWidth || 1300,
+      H = col.h || 800; // world box = the collision map (1300×800)
+    var vw = window.innerWidth,
+      vh = window.innerHeight;
+    var s = Math.min(vw / W, vh / H);
+    elGame.style.position = "fixed";
+    elGame.style.left = "0";
+    elGame.style.top = "0";
+    elGame.style.margin = "0";
+    elGame.style.width = W + "px";
+    elGame.style.height = H + "px";
+    elGame.style.transformOrigin = "top left";
+    elGame.style.transform =
+      "translate(" +
+      (vw - W * s) / 2 +
+      "px," +
+      (vh - H * s) / 2 +
+      "px) scale(" +
+      s +
+      ")";
   }
 
   // ---- collision map -------------------------------------------------------
@@ -1109,7 +1130,8 @@
     ov.addEventListener("click", function () {
       try {
         localStorage.removeItem("nooir.story"); // reset flags…
-        localStorage.removeItem("nooir.env"); // …and resume-state (scene/weather/character)
+        localStorage.removeItem("nooir.env"); // …resume-state (scene/weather/character)…
+        localStorage.removeItem("nooir.inv"); // …and the carried inventory
       } catch (e) {}
       location.reload();
     });
@@ -1280,9 +1302,10 @@
       return;
     } // a click anywhere advances the conversation
     if (transitioning || editor.on) return; // editor consumes clicks for painting
-    var rect = elBg.getBoundingClientRect(); // .background spans the world
-    var wx = e.clientX - rect.left,
-      wy = e.clientY - rect.top;
+    var rect = elBg.getBoundingClientRect(); // .background spans the world (scaled)
+    // map screen → world pixels, dividing out the fit-to-screen scale
+    var wx = ((e.clientX - rect.left) * col.w) / rect.width,
+      wy = ((e.clientY - rect.top) * col.h) / rect.height;
     // clicking an actionable scenery block (on its opaque pixels) runs its action
     var blk = blockActionAt(wx, wy);
     if (blk) {
@@ -1621,7 +1644,18 @@
   // are cleared on every level load (re-add them from the room's actions.js);
   // the inventory persists across levels, and a taken id won't respawn.
   var objects = [];
-  var inventory = []; // {id, image}
+  // inventory persists across reloads (localStorage). Items carry {id, image};
+  // hasItem(id) gates story logic and also stops a taken item respawning, so a
+  // restored inventory resumes the run correctly. Cleared by "begin again".
+  var inventory = [];
+  try {
+    inventory = JSON.parse(localStorage.getItem("nooir.inv") || "[]") || [];
+  } catch (e) {}
+  function saveInventory() {
+    try {
+      localStorage.setItem("nooir.inv", JSON.stringify(inventory));
+    } catch (e) {}
+  }
   var pendingInteract = null; // object the character is walking over to grab
   var invBar = null;
 
@@ -1719,6 +1753,7 @@
     var i = objects.indexOf(o);
     if (i >= 0) objects.splice(i, 1);
     if (!hasItem(o.id)) inventory.push({ id: o.id, image: o.image });
+    saveInventory(); // persist across reloads
     renderInventory();
   }
 
@@ -2431,10 +2466,12 @@
     curBg = "";
 
     var layers = document.querySelectorAll(".clouds, .background, .fence");
-    for (var i = 0; i < layers.length; i++)
+    for (var i = 0; i < layers.length; i++) {
       layers[i].style.width = bgWidth + "px";
+      layers[i].style.height = (col.h || 800) + "px"; // fill the world box (was 100%)
+    }
     buildObjBlocks(); // depth-sorted scenery props (replaces/augments .fence)
-    centerGame();
+    fitToScreen();
   }
 
   function swapRoomCss(n) {
@@ -4161,6 +4198,8 @@
     env.level >= 1 && env.level <= MAX_LEVEL
       ? env.level
       : window.mainlevel || 1;
+  if (inventory.length) renderInventory(); // show a restored inventory
+  fitToScreen();
   loadLevel(bootLevel).then(function () {
     requestAnimationFrame(frame);
   });

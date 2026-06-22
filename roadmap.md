@@ -170,8 +170,8 @@ The game is a **pure static web app**, so every target wraps the same `noir/` fo
 **Engine changes needed before shipping (one focused pass):**
 1. ~~Dev-mode flag~~ — ✅ `config.js` `dev` auto-detects localhost (on) vs deployed (off); engine hides the toolbar + editor + E-key in production.
 2. **Input abstraction** — pointer/touch parity (tap already = click; editor is dev-only; talk works by tapping NPCs).
-3. **Fit-to-screen scaling** — CSS transform on `.game` to letterbox the fixed 1300px world to any viewport.
-4. **Persistence** — inventory + story flags → `localStorage` (resume on relaunch).
+3. ~~Fit-to-screen scaling~~ — ✅ `fitToScreen()` scales the 1300×800 world (CSS transform on `.game`) to any viewport, letterboxed; floor clicks divide out the scale.
+4. ~~Persistence~~ — ✅ inventory persists (`nooir.inv`) alongside story flags + session env; "begin again" clears all three.
 5. **Drop `?t=` cache-buster** in packaged builds (assets are bundled).
 
 **Order:** Web → skalamax.si → Capacitor mobile → Tauri desktop.
