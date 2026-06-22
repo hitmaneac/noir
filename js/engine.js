@@ -334,7 +334,11 @@
       }
     }
     if (best)
-      return { to: best.to | 0, id: best.id != null ? best.id : z.index };
+      return {
+        to: best.to | 0,
+        id: best.id != null ? best.id : z.index,
+        with: best["with"] || null, // door-specific settings overrides (scene reuse)
+      };
     // 2) colour fallback — green = forward (exitTo), blue = back (backTo)
     var to =
       z.color === "fwd"
@@ -344,7 +348,7 @@
         : window.backTo != null
           ? window.backTo
           : level - 1;
-    return { to: to | 0, id: z.color };
+    return { to: to | 0, id: z.color, with: null };
   }
   function computeExitZones() {
     var w = col.w,
@@ -421,6 +425,7 @@
       var r = resolveExitTarget(zones[i]);
       zones[i].to = r.to;
       zones[i].id = r.id;
+      zones[i]["with"] = r["with"]; // settings overrides carried by this door, if any
     }
     for (var k = 0; k < total; k++) if (labels[k]) labels[k] = remap[labels[k]];
     exitZones = zones;
@@ -2075,7 +2080,7 @@
     var dest = z ? z.to : 0;
     if (dest >= 1 && dest <= MAX_LEVEL && dest !== level) {
       transitioning = true;
-      transitionTo(dest);
+      transitionTo(dest, z ? z["with"] : null); // door may reuse the scene w/ overrides
     }
   }
 
@@ -2086,12 +2091,12 @@
       transitionTo(n);
     }
   }
-  function transitionTo(n) {
+  function transitionTo(n, overrides) {
     ensureFade();
     fade.style.opacity = 1;
     wait(450)
       .then(function () {
-        return loadLevel(n);
+        return loadLevel(n, overrides);
       })
       .then(function () {
         fade.style.opacity = 0;
@@ -2579,7 +2584,7 @@
       typeof window.startingFacing === "string" ? window.startingFacing : "r";
   }
 
-  function loadLevel(n) {
+  function loadLevel(n, overrides) {
     swapRoomCss(n);
     // optional settings: clear so they can't leak from the previous level
     window.rain = undefined;
@@ -2597,6 +2602,12 @@
     return (
       loadScript("rooms/scene" + n + "/js/settings.js")
         .then(function () {
+          // a door may reuse this scene with tweaked settings: merge its `with`
+          // object over whatever settings.js just set (shallow, per top-level key).
+          if (overrides && typeof overrides === "object")
+            for (var k in overrides)
+              if (Object.prototype.hasOwnProperty.call(overrides, k))
+                window[k] = overrides[k];
           applyRoomConfig();
           return loadCollision();
         })
@@ -2638,6 +2649,9 @@
     perspEdited: false, // farHeight/nearHeight changed this scene (→ saved on S)
     heroPlaced: false, // hero start position moved (→ startingPoint/startingY saved)
     npcsPlaced: false, // an NPC was moved/scaled (→ npcPlacements saved)
+    doorPanel: null, // DOM panel listing exit/back doors with a target dropdown
+    doors: null, // snapshot [{cx,cy,color,to,id,with}] shown in the panel
+    doorsEdited: false, // a door target was changed (→ exits saved on S)
   };
   var BRUSH_RGB = {};
   BRUSH_RGB[T_FLOOR] = [255, 0, 255];
@@ -3584,10 +3598,110 @@
       editor.polyPts = [];
       applyEdits(true);
     }
+    if (!editor.on && editor.doorPanel) editor.doorPanel.style.display = "none";
     updateHud();
     updateZoneLabels();
     drawObjBlockGuides();
     drawPreview();
+  }
+
+  // ---- door target panel ---------------------------------------------------
+  // Each painted exit (green) / back (blue) region is a "door". This panel lists
+  // them with a scene dropdown so several doors can point to different scenes
+  // without hand-editing `exits` in settings.js. `with:` overrides (scene reuse
+  // with tweaked settings) stay hand-written — flagged here with a ✱.
+  function ensureDoorPanel() {
+    if (editor.doorPanel) return;
+    var p = document.createElement("div");
+    p.style.cssText =
+      "position:fixed;right:10px;top:10px;z-index:100050;font:12px/1.5 monospace;" +
+      "color:#9cf;background:rgba(0,0,0,.85);padding:10px 12px;border:1px solid #9cf;" +
+      "display:none;max-height:82vh;overflow:auto;pointer-events:auto;";
+    document.body.appendChild(p);
+    editor.doorPanel = p;
+  }
+  function renderDoorPanel() {
+    ensureDoorPanel();
+    var p = editor.doorPanel;
+    p.innerHTML = "";
+    var title = document.createElement("div");
+    title.textContent = "DOORS — scene " + level + "   (G to close)";
+    title.style.cssText = "margin-bottom:8px;color:#cef;font-weight:bold;";
+    p.appendChild(title);
+    if (!editor.doors || !editor.doors.length) {
+      var none = document.createElement("div");
+      none.style.whiteSpace = "pre";
+      none.textContent =
+        "No exit/back zones painted.\nPaint green [2] (exit) or blue [7] (back) first.";
+      p.appendChild(none);
+      return;
+    }
+    for (var i = 0; i < editor.doors.length; i++) {
+      (function (dr, idx) {
+        var row = document.createElement("div");
+        row.style.cssText =
+          "display:flex;align-items:center;gap:6px;margin:3px 0;";
+        var lab = document.createElement("span");
+        lab.textContent =
+          (dr.color === "fwd" ? "● exit" : "● back") +
+          " @" +
+          Math.round(dr.cx) +
+          "," +
+          Math.round(dr.cy) +
+          (dr["with"] ? " ✱" : "") +
+          " →";
+        lab.style.color = dr.color === "fwd" ? "#5d6" : "#69f";
+        var sel = document.createElement("select");
+        sel.style.cssText =
+          "background:#012;color:#9cf;border:1px solid #9cf;font:12px monospace;";
+        var optNone = document.createElement("option");
+        optNone.value = "0";
+        optNone.textContent = "(dead end)";
+        sel.appendChild(optNone);
+        for (var s = 1; s <= MAX_LEVEL; s++) {
+          var o = document.createElement("option");
+          o.value = String(s);
+          o.textContent = "scene " + s;
+          if (s === dr.to) o.selected = true;
+          sel.appendChild(o);
+        }
+        if (!dr.to) optNone.selected = true;
+        sel.addEventListener("change", function () {
+          dr.to = parseInt(sel.value, 10) || 0;
+          editor.doorsEdited = true;
+          if (exitZones[idx]) exitZones[idx].to = dr.to; // live — door works pre-save
+        });
+        row.appendChild(lab);
+        row.appendChild(sel);
+        p.appendChild(row);
+      })(editor.doors[i], i);
+    }
+    var hint = document.createElement("div");
+    hint.style.cssText = "margin-top:8px;color:#789;font-size:11px;white-space:pre;";
+    hint.textContent =
+      "✱ = has `with:` overrides (reuse w/ tweaks,\n    hand-edit in settings.js)\n" +
+      "[S] saves exits=[…]";
+    p.appendChild(hint);
+  }
+  function toggleDoorPanel() {
+    ensureDoorPanel();
+    if (editor.doorPanel.style.display === "block") {
+      editor.doorPanel.style.display = "none";
+      return;
+    }
+    // snapshot the current doors (centroid order matches exitZones)
+    editor.doors = exitZones.map(function (z) {
+      return {
+        cx: z.cx,
+        cy: z.cy,
+        color: z.color,
+        to: z.to,
+        id: z.id,
+        with: z["with"] || null,
+      };
+    });
+    renderDoorPanel();
+    editor.doorPanel.style.display = "block";
   }
 
   // commit edits to the live game: refresh the perspective band and keep the
@@ -3634,7 +3748,7 @@
       "\n" +
       "[1] walkable [2] exit [3] slow [7] back [8] light\n" +
       "[4] erase [5] obstruct [6] action   [I] name zone under cursor\n" +
-      "[L] line  [P] polygon  [N] npc path  [H] place/perspective (hero+NPCs)  [Esc] cancel\n" +
+      "[L] line  [P] polygon  [N] npc path  [H] place/perspective (hero+NPCs)  [G] door targets  [Esc] cancel\n" +
       "[O] add objBlock (pick image)  [Shift+O] remove  [M] move (drag block)\n" +
       "[ [ ] ] size   [Enter] apply   [X] clear   [S] save (map+zones+objBlocks)\n" +
       "paint: drag (brush) · click points (line/polygon)";
@@ -3737,6 +3851,8 @@
       }
       var placements = editor.npcsPlaced ? editorNpcPlacements() : [];
       if (editor.npcsPlaced) text = injectNpcPlacements(text, placements);
+      if (editor.doorsEdited && editor.doors)
+        text = injectExits(text, editor.doors); // per-door redirect targets
       var sw = await sh.createWritable();
       await sw.write(text);
       await sw.close();
@@ -3752,6 +3868,7 @@
           (editor.perspEdited ? " + heights" : "") +
           (editor.heroPlaced ? " + spawn" : "") +
           (placements.length ? " + " + placements.length + " placement(s)" : "") +
+          (editor.doorsEdited ? " + doors" : "") +
           " ✓",
         1600,
       );
@@ -3771,6 +3888,54 @@
       /(\n[ \t]*)(scene|level)\s*=/,
       "$1" + name + " = " + lit + ",$1$2 =",
     );
+  }
+  // Find a `name = [ … ]` assignment, matching brackets so a MULTI-LINE array
+  // (e.g. a hand-written `exits` with nested `with:` objects) is spanned in full.
+  // Returns {start, after} byte offsets (after swallows a trailing comma), or null.
+  function findBalancedArray(text, name) {
+    var m = new RegExp(name + "\\s*=\\s*\\[").exec(text);
+    if (!m) return null;
+    var open = text.indexOf("[", m.index),
+      depth = 0,
+      end = -1;
+    for (var i = open; i < text.length; i++) {
+      if (text[i] === "[") depth++;
+      else if (text[i] === "]") {
+        depth--;
+        if (depth === 0) {
+          end = i;
+          break;
+        }
+      }
+    }
+    if (end < 0) return null;
+    var after = end + 1;
+    if (text[after] === ",") after++;
+    return { start: m.index, after: after };
+  }
+  // Splice `exits = [{to,cx,cy,id?,with?}, …]` — the per-door redirect map the
+  // door panel edits. Preserves any hand-written `with:` overrides. Empty = drop.
+  function injectExits(text, doors) {
+    var clean = doors
+      .filter(function (dr) {
+        return dr.to >= 1;
+      })
+      .map(function (dr) {
+        var o = { to: dr.to | 0, cx: Math.round(dr.cx), cy: Math.round(dr.cy) };
+        if (typeof dr.id === "string" && dr.id !== "fwd" && dr.id !== "back")
+          o.id = dr.id;
+        if (dr["with"] != null) o["with"] = dr["with"];
+        return o;
+      });
+    var span = findBalancedArray(text, "exits");
+    if (!clean.length) {
+      if (!span) return text;
+      var head = text.slice(0, span.start).replace(/[ \t]*$/, "");
+      return head + text.slice(span.after).replace(/^[ \t]*,?\n?/, "\n");
+    }
+    var line = "exits = " + JSON.stringify(clean);
+    if (span) return text.slice(0, span.start) + line + "," + text.slice(span.after);
+    return text.replace(/(\n[ \t]*)(scene|level)\s*=/, "$1" + line + ",$1$2 =");
   }
   // Splice `actionZones = [...]` into a settings.js var-chain (replace if present,
   // else insert just before `level = N`).
@@ -3998,6 +4163,9 @@
       case 70:
         if (editor.tool === "perspective") cyclePerspFacing();
         break; // F = turn the grabbed figure (l→r→f→b)
+      case 71:
+        toggleDoorPanel();
+        break; // G = door target panel (pick where each exit/back goes)
       case 27:
         cancelDraw();
         break; // Esc = cancel in-progress line/poly/move

@@ -18,7 +18,7 @@ pass** before shipping. See `assets-todo.md` for the art punch-list. Session sta
 - **Non-linear scene transitions** — `exitTo`/`backTo` + **multi-door `exits` component map** (see below); depth-sorted `objBlocks` scenery.
 - **Dialog system** with per-line staging, display names (`label`, `heroName`), **branching `{choice}`** + **persisted story flags** (`Nooir.story`/`setFlag`/`getFlag`), and the **`theEnd` ending card**.
 - **NPCs** (click / Enter-near to talk, optional static `pose`); **inventory**; **action zones** (painted + settings points); world **objects** (click / Enter).
-- In-context **collision editor** (paint, line/polygon, objBlock add/move, light pools, NPC paths, **perspective tool**, **always-prompt save** to PNG + settings).
+- In-context **collision editor** (paint, line/polygon, objBlock add/move, light pools, NPC paths, **perspective tool**, **door-target panel** `G`, **always-prompt save** to PNG + settings).
 - **Place / perspective tool** (`E` then `H`) — one tool to set the scene's depth and place its figures:
   - drag the dashed **far/near ghost handles** → `farHeight` / `nearHeight`;
   - drag the **hero body** → its start position (`startingPoint` x + new optional `startingY`);
@@ -144,7 +144,16 @@ All 16 backgrounds are **real artwork**. "Gameplay" = scripted beats wired in.
     { to: 3, cx: 60,   cy: 700, id: "frontDoor" }, // that region → scene 3
   ],
   ```
-  Each region is matched to the nearest `exits[]` def by centroid (≤90px) and inherits its `to`; unmatched regions fall back to the green=`exitTo` / blue=`backTo` colour rule. So single-door scenes need no `exits` at all. *(Authoring: paint the regions in the editor `E`, then add an `exits` entry per region with its centroid + target — same workflow as named action zones.)*
+  Each region is matched to the nearest `exits[]` def by centroid (≤90px) and inherits its `to`; unmatched regions fall back to the green=`exitTo` / blue=`backTo` colour rule. So single-door scenes need no `exits` at all.
+  - **Door-target panel (editor `G`)** — in the editor, press **`G`** to open a panel listing every painted exit/back door with a **scene dropdown**. Pick a target per door (or *dead end*); the change takes effect live (test it immediately) and **`S` saves** it as the `exits` map — no hand-editing needed for the targets. Doors carrying a `with:` override are flagged with a ✱.
+  - **Scene reuse with overrides (`with:`)** — a door can reuse a scene with tweaked settings: add a `with` object and it's shallow-merged (per top-level key) over the target scene's own `settings.js` **only when entered through that door**:
+    ```js
+    exits = [
+      { to: 6, cx: 200, cy: 600 },                                  // scene 6 as authored
+      { to: 6, cx: 900, cy: 600, with: { rain: 0, cast: ['cop'] } } // same art, different settings
+    ],
+    ```
+    Reaching scene 6 any other way (a different door, the level picker) ignores the override. The panel edits targets; the `with` object stays hand-written in `settings.js` (preserved across editor saves, even multi-line).
 - **Session resume** — manual scene / character / rain / clouds / sky-bright are persisted to `localStorage` (`nooir.env`) and restored on reload. Scene settings still set their own defaults; a stored value is overlaid on top. The ending card's "begin again" clears `nooir.env` (+ `nooir.story`). *(Inventory still in-memory — folds into the production persistence pass.)*
 - **Per-scene character lighting** — `settings.js` `charTint` tints/brightens/darkens the hero **and** NPCs (CSS filter) so they sit in the room's light instead of looking pasted on. Forms: `charTint = 0.7` (brightness), a raw filter string `"brightness(.6) saturate(.8)"`, or an object `{ brightness, contrast, saturate, sepia, hue, blur }`. Dial it live with `Nooir.charTint(...)` (returns the computed filter) then paste into the scene. Examples wired: scene5 warm bar, scene10 cold dock.
 - **Light pools** — a new collision terrain (**orange**, editor brush **`8` = LIGHT**) painted over the floor. Whoever stands in it gets a brightness boost on top of the scene's `charTint` — the hero updates live as he walks in/out; NPCs standing in a pool are lit too. Pools are walkable floor. Strength defaults to ×1.6, per-scene override `lightBoost`. *(Paint pools under lamps/windows in the editor `E`, then `S` to save.)*
