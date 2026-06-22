@@ -17,6 +17,7 @@ pass** before shipping. See `assets-todo.md` for the art punch-list. Session sta
 - 8-direction walk engine, A* click-to-walk, run, per-character sprite metadata.
 - **Non-linear scene transitions** — `exitTo`/`backTo` + **multi-door `exits` component map** (see below); depth-sorted `objBlocks` scenery.
 - **Dialog system** with per-line staging, display names (`label`, `heroName`), **branching `{choice}`** + **persisted story flags** (`Nooir.story`/`setFlag`/`getFlag`), and the **`theEnd` ending card**.
+- **Cutscene system** — declarative step scripts (see below) mixing full-screen stills/animations with in-scene staged beats; `onEnter` (once) or `Nooir.playCutscene`; skippable.
 - **NPCs** (click / Enter-near to talk, optional static `pose`); **inventory**; **action zones** (painted + settings points); world **objects** (click / Enter).
 - In-context **collision editor** (paint, line/polygon, objBlock add/move, light pools, NPC paths, **perspective tool**, **door-target panel** `G`, **always-prompt save** to PNG + settings).
 - **Place / perspective tool** (`E` then `H`) — one tool to set the scene's depth and place its figures:
@@ -156,6 +157,19 @@ All 16 backgrounds are **real artwork**. "Gameplay" = scripted beats wired in.
     ```
     Reaching scene 6 any other way (a different door, the level picker) ignores the override. The panel edits targets; the `with` object stays hand-written in `settings.js` (preserved across editor saves, even multi-line).
   - **Locked doors (`window.exitGate`)** — a scene's `actions.js` can set `window.exitGate = function (dest, zone) { … return false }` to veto a door until a story beat clears it (reset per scene on load). Used by the **scene14 doorman**, who blocks the green exit to Toranno's back room (→7) until a dialog choice calls `Nooir.passDoorman()` (sets `pastDoorman`); a throttled nudge fires if you try the door first.
+- **Cutscenes** — a cutscene is an ordered list of typed steps run by a promise-based sequencer that reuses the dialog staging (`moveTo` glides), the fade overlay, and `shake`, plus a full-screen still/caption layer. Register with `Nooir.cutscene(id, steps)`; play via a scene's settings **`onEnter:"id"`** (once, gated by the `cs_<id>` flag) or **`Nooir.playCutscene("id")`** (from a dialog choice's `do:`, an action zone, anywhere). Skippable (skip button / `Esc`; a skipped cutscene still honors its trailing `goto`). Input + exits are suspended while it runs.
+  ```js
+  Nooir.cutscene("flashback", [
+    { do: "fade",  to: 1, ms: 600 },                          // → black
+    { do: "still", img: "cutscenes/alley.png", fadeIn: 800 }, // full-frame image (ms omitted = wait for a tap)
+    { do: "say",   who: "vera", text: "He said he'd be careful." },
+    { do: "anim",  frames: ["cutscenes/rain1.png","rain2.png"], speed: 0.12, hold: 1500 },
+    { do: "clear", ms: 600 },                                 // fade the still → back to the live room
+    { do: "move",  who: "hero", x: 520, y: 600, facing: "l" },// in-scene staged glide
+    { do: "shake", ms: 500 }, { do: "goto", scene: 10 },      // hand off to a scene
+  ]);
+  ```
+  Steps: `fade {to,ms}` · `still {img,frames?,speed?,fadeIn?,ms?}` · `anim {frames,speed?,hold?}` · `clear {ms?}` · `say {who,text}` · `move {who,x,y,facing?,wait?}` · `face {who,facing}` · `shake {ms?}` · `flash {text,ms?}` · `wait {ms}` · `call {fn}` · `goto {scene,with?}`. Image paths are root-relative (e.g. a `cutscenes/` folder), not scene-prefixed. *(Demo: scene17's `apartment_intro` plays on first entry; full examples in `rooms/scene17/js/actions.js`.)*
 - **Session resume** — manual scene / character / rain / clouds / sky-bright are persisted to `localStorage` (`nooir.env`) and restored on reload. Scene settings still set their own defaults; a stored value is overlaid on top. The ending card's "begin again" clears `nooir.env` (+ `nooir.story`). *(Inventory still in-memory — folds into the production persistence pass.)*
 - **Per-scene character lighting** — `settings.js` `charTint` tints/brightens/darkens the hero **and** NPCs (CSS filter) so they sit in the room's light instead of looking pasted on. Forms: `charTint = 0.7` (brightness), a raw filter string `"brightness(.6) saturate(.8)"`, or an object `{ brightness, contrast, saturate, sepia, hue, blur }`. Dial it live with `Nooir.charTint(...)` (returns the computed filter) then paste into the scene. Examples wired: scene5 warm bar, scene10 cold dock.
 - **Light pools** — a new collision terrain (**orange**, editor brush **`8` = LIGHT**) painted over the floor. Whoever stands in it gets a brightness boost on top of the scene's `charTint` — the hero updates live as he walks in/out; NPCs standing in a pool are lit too. Pools are walkable floor. Strength defaults to ×1.6, per-scene override `lightBoost`. *(Paint pools under lamps/windows in the editor `E`, then `S` to save.)*
