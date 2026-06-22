@@ -77,6 +77,16 @@
   elChar.style.top = "0";
   elChar.style.left = "0";
   elChar.style.willChange = "transform";
+  // fitToScreen scales the whole .game up on monitors bigger than the 1300×800
+  // world; the default bilinear filter blurs the cel-shaded sprites (worst on the
+  // near/large hero). Nearest-neighbour keeps their hard outlines crisp. Sprites
+  // only (hero/NPCs/props) — the painted backgrounds want the smooth filter.
+  (function () {
+    var st = document.createElement("style");
+    st.textContent =
+      ".character, .npc, .object { image-rendering: pixelated; }";
+    document.head.appendChild(st);
+  })();
   window.addEventListener("resize", fitToScreen);
   // Scale the fixed 1300×800 world to fit any viewport, centred (letterboxed on
   // the black body). Uniform scale preserves aspect; everything inside .game
