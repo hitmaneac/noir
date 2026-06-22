@@ -59,7 +59,7 @@ All 16 backgrounds are **real artwork**. "Gameplay" = scripted beats wired in.
 | scene12 | **Outside the precinct** (exterior) | pass-through |
 | scene6 | **The precinct** (interior) | Brandt warning; case-file zone (`sawFile`) |
 | scene13 | **Outside Toranno's club** (exterior) | pass-through |
-| scene14 | **Inside the club** (main floor) | pass-through *(beat TBD)* |
+| scene14 | **Inside the club** (main floor) | doorman gates Toranno's back room (`pastDoorman`) |
 | scene7 | **Toranno's club, back room** | Toranno; reservation-book zone (`sawClubBook`) |
 | scene15 | **Hallway to the holding cell** (interior) | pass-through |
 | scene9 | **The cell** (the frame) | Brandt frame + Dot rescue (`protectedDot`) |
@@ -110,7 +110,8 @@ All 16 backgrounds are **real artwork**. "Gameplay" = scripted beats wired in.
 - [x] **All 16 scene backgrounds = real artwork.**
 - [ ] **NPC sprites**: real front/back frames + diagonals (currently side-walk only); staged poses (Mickey behind the bar, Brandt at the desk, …).
 - [ ] **Repaint clue props** (greenbook, photo, ticket, matchbook, body) — tiny placeholders.
-- [ ] Optional **beats in the connective scenes** (club doorman, desk sergeant; a Vera+Toranno sighting on the club floor — scene14).
+- [x] **Club doorman** (scene14) — gates the back-room door until you talk past him (3-way choice: name-drop Finch / flash the matchbook / lean on him), via the new `window.exitGate` hook.
+- [ ] Optional **further beats in the connective scenes** (desk sergeant; a Vera+Toranno sighting on the club floor).
 
 ### Milestone 6 — production / packaging *(not started — see below)*
 
@@ -154,6 +155,7 @@ All 16 backgrounds are **real artwork**. "Gameplay" = scripted beats wired in.
     ],
     ```
     Reaching scene 6 any other way (a different door, the level picker) ignores the override. The panel edits targets; the `with` object stays hand-written in `settings.js` (preserved across editor saves, even multi-line).
+  - **Locked doors (`window.exitGate`)** — a scene's `actions.js` can set `window.exitGate = function (dest, zone) { … return false }` to veto a door until a story beat clears it (reset per scene on load). Used by the **scene14 doorman**, who blocks the green exit to Toranno's back room (→7) until a dialog choice calls `Nooir.passDoorman()` (sets `pastDoorman`); a throttled nudge fires if you try the door first.
 - **Session resume** — manual scene / character / rain / clouds / sky-bright are persisted to `localStorage` (`nooir.env`) and restored on reload. Scene settings still set their own defaults; a stored value is overlaid on top. The ending card's "begin again" clears `nooir.env` (+ `nooir.story`). *(Inventory still in-memory — folds into the production persistence pass.)*
 - **Per-scene character lighting** — `settings.js` `charTint` tints/brightens/darkens the hero **and** NPCs (CSS filter) so they sit in the room's light instead of looking pasted on. Forms: `charTint = 0.7` (brightness), a raw filter string `"brightness(.6) saturate(.8)"`, or an object `{ brightness, contrast, saturate, sepia, hue, blur }`. Dial it live with `Nooir.charTint(...)` (returns the computed filter) then paste into the scene. Examples wired: scene5 warm bar, scene10 cold dock.
 - **Light pools** — a new collision terrain (**orange**, editor brush **`8` = LIGHT**) painted over the floor. Whoever stands in it gets a brightness boost on top of the scene's `charTint` — the hero updates live as he walks in/out; NPCs standing in a pool are lit too. Pools are walkable floor. Strength defaults to ×1.6, per-scene override `lightBoost`. *(Paint pools under lamps/windows in the editor `E`, then `S` to save.)*
