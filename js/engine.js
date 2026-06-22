@@ -2079,6 +2079,13 @@
     var z = exitZones[lbl - 1];
     var dest = z ? z.to : 0;
     if (dest >= 1 && dest <= MAX_LEVEL && dest !== level) {
+      // a scene may veto a door until a story beat clears it (e.g. the scene14
+      // doorman gates the back room). exitGate(dest, zone) → false blocks it.
+      if (
+        typeof window.exitGate === "function" &&
+        window.exitGate(dest, z) === false
+      )
+        return;
       transitioning = true;
       transitionTo(dest, z ? z["with"] : null); // door may reuse the scene w/ overrides
     }
@@ -2599,6 +2606,7 @@
     window.npcPlacements = undefined; // editor-saved NPC positions/scales [{npc,x,y,scale?,facing?}]
     window.startingY = undefined; // optional hero spawn depth (else 60% down the floor)
     window.startingFacing = undefined; // optional hero spawn facing (else "r")
+    window.exitGate = undefined; // per-scene door veto (set in a scene's actions.js)
     return (
       loadScript("rooms/scene" + n + "/js/settings.js")
         .then(function () {
