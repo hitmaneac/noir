@@ -1037,7 +1037,8 @@
     dialogEl.appendChild(dialogText);
     dialogEl.appendChild(dialogChoices);
     dialogEl.appendChild(dialogHint);
-    dialogEl.addEventListener("click", advanceDialog);
+    // (advancing is handled by the document-level tap handler so it works
+    // anywhere — the dialog box, the scene, or the letterbox bars on touch)
     document.body.appendChild(dialogEl);
   }
   function openDialog(npc) {
@@ -1296,11 +1297,14 @@
     // clicks on an NPC / object are handled by their own listeners — never let
     // them fall through to floor-walk (synthetic clicks can bubble past stopPropagation)
     var tc = e.target && e.target.classList;
-    if (tc && (tc.contains("npc") || tc.contains("object"))) return;
-    if (dialogOpen) {
-      advanceDialog();
+    if (
+      tc &&
+      (tc.contains("npc") || tc.contains("object") || tc.contains("actionzone"))
+    )
       return;
-    } // a click anywhere advances the conversation
+    if (dialogOpen) return; // don't walk during a conversation (a document-level
+    // tap handler advances it — see below — so a tap anywhere, incl. the
+    // letterbox bars, works on touch)
     if (transitioning || editor.on) return; // editor consumes clicks for painting
     var rect = elBg.getBoundingClientRect(); // .background spans the world (scaled)
     // map screen → world pixels, dividing out the fit-to-screen scale
@@ -1688,6 +1692,8 @@
       h: h,
       image: opts.image || "",
       takeable: !!opts.takeable,
+      label: opts.label, // shown when the inventory item is tapped
+      look: opts.look, // optional longer description on tap (falls back to label/id)
       anim: opts.anim === undefined ? "grab" : opts.anim, // null = no animation
       onInteract:
         typeof opts.onInteract === "function" ? opts.onInteract : null,
@@ -1752,7 +1758,13 @@
     if (o.el && o.el.parentNode) o.el.parentNode.removeChild(o.el);
     var i = objects.indexOf(o);
     if (i >= 0) objects.splice(i, 1);
-    if (!hasItem(o.id)) inventory.push({ id: o.id, image: o.image });
+    if (!hasItem(o.id))
+      inventory.push({
+        id: o.id,
+        image: o.image,
+        label: o.label,
+        look: o.look,
+      });
     saveInventory(); // persist across reloads
     renderInventory();
   }
@@ -1773,15 +1785,24 @@
     invBar.innerHTML = "";
     invBar.style.display = inventory.length ? "flex" : "none";
     for (var i = 0; i < inventory.length; i++) {
+      var item = inventory[i];
       var slot = document.createElement("div");
-      slot.title = inventory[i].id;
+      slot.title = item.label || item.id;
       slot.style.cssText =
         "width:42px;height:42px;border:1px solid #555;border-radius:4px;" +
         "background-color:rgba(255,255,255,.06);background-repeat:no-repeat;" +
         "background-position:center;background-size:contain;" +
-        (inventory[i].image
-          ? "background-image:url('" + inventory[i].image + "');"
-          : "");
+        "pointer-events:auto;cursor:pointer;" + // tappable on touch
+        (item.image ? "background-image:url('" + item.image + "');" : "");
+      slot.addEventListener(
+        "click",
+        (function (it) {
+          return function (ev) {
+            ev.stopPropagation(); // don't advance dialog / walk
+            flashMsg(it.look || it.label || it.id, 1800);
+          };
+        })(item),
+      );
       invBar.appendChild(slot);
     }
   }
@@ -1858,6 +1879,65 @@
     if (typeof cb === "function") cb(info); // and any custom hook
     if (!act && typeof cb !== "function")
       flashMsg('Action zone "' + z.id + '"', 900);
+  }
+  // tappable hit-areas over the (invisible) settings action zones, so a tap walks
+  // the hero to the zone and triggers it (touch parity with Enter / a near-tap).
+  var zoneEls = [];
+  function clearZoneEls() {
+    for (var i = 0; i < zoneEls.length; i++)
+      if (zoneEls[i].parentNode) zoneEls[i].parentNode.removeChild(zoneEls[i]);
+    zoneEls.length = 0;
+  }
+  function buildZoneHitAreas() {
+    clearZoneEls();
+    for (var i = 0; i < zoneDefs.length; i++) {
+      var zd = zoneDefs[i];
+      if (zd.cx == null || zd.cy == null) continue;
+      var sz = zd.r ? zd.r * 2 : 120; // generous tap target
+      var el = document.createElement("div");
+      el.className = "actionzone";
+      el.title = zd.id;
+      el.style.cssText =
+        "position:absolute;left:0;top:0;width:" +
+        sz +
+        "px;height:" +
+        sz +
+        "px;transform:translate3d(" +
+        (zd.cx - sz / 2) +
+        "px," +
+        (zd.cy - sz / 2) +
+        "px,0);pointer-events:auto;cursor:pointer;z-index:" +
+        Math.round(zd.cy) +
+        ";";
+      el.addEventListener(
+        "click",
+        (function (z) {
+          return function () {
+            tapZone(z);
+          };
+        })(zd),
+      );
+      elChar.parentNode.appendChild(el);
+      zoneEls.push(el);
+    }
+  }
+  function tapZone(zd) {
+    if (dialogOpen || transitioning || editor.on) return;
+    var z = zd; // prefer the computed zone (carries an index) if one exists
+    for (var i = 0; i < actionZones.length; i++)
+      if (actionZones[i].id === zd.id) {
+        z = actionZones[i];
+        break;
+      }
+    var dest = nearestWalkable(zd.cx, zd.cy, 400) || { x: zd.cx, y: zd.cy };
+    var path = findPath(player, dest);
+    if (path && path.length) {
+      pendingInteract = null;
+      pendingNpc = null;
+      pendingZone = z; // runs on arrival (followPath)
+      player.path = path;
+      player.pathIndex = 0;
+    } else runZone(z);
   }
   function checkAction() {
     var z = zoneAt(player.x, player.y);
@@ -2015,7 +2095,6 @@
       })
       .then(function () {
         fade.style.opacity = 0;
-        flashMsg("Level " + n, 1400);
         transitioning = false;
       });
   }
@@ -2471,6 +2550,7 @@
       layers[i].style.height = (col.h || 800) + "px"; // fill the world box (was 100%)
     }
     buildObjBlocks(); // depth-sorted scenery props (replaces/augments .fence)
+    buildZoneHitAreas(); // tappable targets over the settings action zones
     fitToScreen();
   }
 
@@ -3838,6 +3918,13 @@
     });
   }
 
+  // touch/click parity with the Enter key: a tap ANYWHERE advances an open
+  // conversation — works on touch devices and over the letterbox bars (the
+  // choice buttons stopPropagation, so picking an option isn't swallowed).
+  document.addEventListener("click", function () {
+    if (dialogOpen && !editor.on) advanceDialog();
+  });
+
   window.addEventListener("keydown", function (e) {
     if (e.keyCode === 69) {
       if (DEV) toggleEditor();
@@ -4115,14 +4202,54 @@
   // for parallax — pure CSS, no per-frame JS. Toggle per-room with `rain` in
   // settings.js (0 = off, or 0..1 intensity), or live with Nooir.rain(...).
   var elRain = null;
+  // Build a seamlessly-tiling rain texture of randomly-placed streaks. Large tiles
+  // + random positions kill the obvious grid the old repeated sprite showed; each
+  // streak is drawn at the 9 wrap offsets so it tiles cleanly across edges.
+  function rainTextureURL(size, count, len, slant, lw) {
+    var c = document.createElement("canvas");
+    c.width = size;
+    c.height = size;
+    var g = c.getContext("2d");
+    g.lineWidth = lw;
+    g.lineCap = "round";
+    for (var i = 0; i < count; i++) {
+      var x = Math.random() * size,
+        y = Math.random() * size,
+        L = len * (0.55 + Math.random() * 0.9),
+        ex = x + slant * L,
+        ey = y + L;
+      g.strokeStyle =
+        "rgba(205,214,228," + (0.35 + Math.random() * 0.5).toFixed(2) + ")";
+      for (var ox = -1; ox <= 1; ox++)
+        for (var oy = -1; oy <= 1; oy++) {
+          g.beginPath();
+          g.moveTo(x + ox * size, y + oy * size);
+          g.lineTo(ex + ox * size, ey + oy * size);
+          g.stroke();
+        }
+    }
+    return c.toDataURL();
+  }
   function ensureRain() {
     if (elRain) return;
+    var NEAR = 240,
+      FAR = 320; // big, *different* tiles → the repeat period isn't catchable
+    var nearURL = rainTextureURL(NEAR, 95, 26, -0.18, 1.4),
+      farURL = rainTextureURL(FAR, 70, 18, -0.18, 1.1);
     var style = document.createElement("style");
-    // each layer falls down + slightly left by whole tile multiples, so the
-    // dash texture loops seamlessly; different durations give the parallax.
+    // translate by whole-tile multiples so each layer loops seamlessly; the
+    // diagonal adds wind, the differing periods give parallax.
     style.textContent =
-      "@keyframes nooir-rain-near{to{background-position:-96px 288px;}}" +
-      "@keyframes nooir-rain-far{to{background-position:-60px 180px;}}";
+      "@keyframes nooir-rain-near{to{background-position:" +
+      -NEAR +
+      "px " +
+      NEAR * 2 +
+      "px;}}" +
+      "@keyframes nooir-rain-far{to{background-position:" +
+      -FAR +
+      "px " +
+      FAR * 2 +
+      "px;}}";
     document.head.appendChild(style);
     elRain = document.createElement("div");
     elRain.className = "rain";
@@ -4132,13 +4259,21 @@
     var near = document.createElement("div"),
       far = document.createElement("div");
     near.style.cssText =
-      "position:absolute;inset:0;background:url('fx/rain.png') repeat;" +
-      "background-size:96px 96px;opacity:.9;" +
-      "animation:nooir-rain-near .7s linear infinite;";
+      "position:absolute;inset:0;background:url('" +
+      nearURL +
+      "') repeat;background-size:" +
+      NEAR +
+      "px " +
+      NEAR +
+      "px;opacity:.9;animation:nooir-rain-near .6s linear infinite;";
     far.style.cssText =
-      "position:absolute;inset:0;background:url('fx/rain.png') repeat;" +
-      "background-size:60px 60px;opacity:.45;" +
-      "animation:nooir-rain-far 1.15s linear infinite;";
+      "position:absolute;inset:0;background:url('" +
+      farURL +
+      "') repeat;background-size:" +
+      FAR +
+      "px " +
+      FAR +
+      "px;opacity:.5;animation:nooir-rain-far 1.05s linear infinite;";
     elRain.appendChild(far);
     elRain.appendChild(near);
     elGame.appendChild(elRain); // inside the game window, not the viewport
